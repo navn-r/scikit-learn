@@ -1,0 +1,208 @@
+[1m============================= test session starts ==============================[0m
+platform linux -- Python 3.10.2, pytest-7.0.1, pluggy-1.0.0
+rootdir: /mnt/c/Users/Aryan Patel/Documents/CSCD01/scikit-learn, configfile: setup.cfg
+collected 11 items
+
+test_class_weight.py [32m.[0m[31mF[0m[31mF[0m[32m.[0m[32m.[0m[32m.[0m[31mF[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[31m                                         [100%][0m
+
+=================================== FAILURES ===================================
+[31m[1m____________________ test_compute_class_weight_not_present _____________________[0m
+
+    def test_compute_class_weight_not_present():
+        # Raise error when y does not contain all class labels
+        classes = np.arange(4)
+        y = np.asarray([0, 0, 0, 1, 1, 2])
+        with pytest.raises(ValueError):
+            compute_class_weight("balanced", classes=classes, y=y)
+        # Fix exception in error message formatting when missing label is a string
+        # https://github.com/scikit-learn/scikit-learn/issues/8312
+        with pytest.raises(ValueError, match="Class label label_not_present not present"):
+>           compute_class_weight({"label_not_present": 1.0}, classes=classes, y=y)
+
+[1m[31mtest_class_weight.py[0m:34: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+class_weight = {'label_not_present': 1.0}
+
+    def compute_class_weight(class_weight, *, classes, y):
+        """Estimate class weights for unbalanced datasets.
+    
+        Parameters
+        ----------
+        class_weight : dict, 'balanced' or None
+            If 'balanced', class weights will be given by
+            ``n_samples / (n_classes * np.bincount(y))``.
+            If a dictionary is given, keys are classes and values
+            are corresponding class weights.
+            If None is given, the class weights will be uniform.
+    
+        classes : ndarray
+            Array of the classes occurring in the data, as given by
+            ``np.unique(y_org)`` with ``y_org`` the original class labels.
+    
+        y : array-like of shape (n_samples,)
+            Array of original class labels per sample.
+    
+        Returns
+        -------
+        class_weight_vect : ndarray of shape (n_classes,)
+            Array with class_weight_vect[i] the weight for i-th class.
+    
+        References
+        ----------
+        The "balanced" heuristic is inspired by
+        Logistic Regression in Rare Events Data, King, Zen, 2001.
+        """
+        # Import error caused by circular imports.
+        from ..preprocessing import LabelEncoder
+    
+        if set(y) - set(classes):
+            raise ValueError("classes should include all valid labels that can be in y")
+        if class_weight is None or len(class_weight) == 0:
+            # uniform class weights
+            weight = np.ones(classes.shape[0], dtype=np.float64, order="C")
+        elif class_weight == "balanced":
+            # Find the weight of each class as present in y.
+            le = LabelEncoder()
+            y_ind = le.fit_transform(y)
+            if not all(np.in1d(classes, le.classes_)):
+                raise ValueError("classes should have valid labels that are in y")
+    
+            recip_freq = len(y) / (len(le.classes_) * np.bincount(y_ind).astype(np.float64))
+            weight = recip_freq[le.transform(classes)]
+        else:
+            # user-defined dictionary
+            weight = np.ones(classes.shape[0], dtype=np.float64, order="C")
+            if not isinstance(class_weight, dict):
+                raise ValueError(
+                    "class_weight must be dict, 'balanced', or None, got: %r" % class_weight
+                )
+    
+            # Ignore class weights that are not in y
+            for c in y:
+                i = np.searchsorted(classes, c)
+                if i >= len(classes) or classes[i] != c or c not in class_weight:
+>                   raise ValueError("Class label {} not present.".format(c))
+[1m[31mE                   ValueError: Class label 0 not present.[0m
+
+[1m[31m../class_weight.py[0m:66: ValueError
+
+[33mDuring handling of the above exception, another exception occurred:[0m
+
+    def test_compute_class_weight_not_present():
+        # Raise error when y does not contain all class labels
+        classes = np.arange(4)
+        y = np.asarray([0, 0, 0, 1, 1, 2])
+        with pytest.raises(ValueError):
+            compute_class_weight("balanced", classes=classes, y=y)
+        # Fix exception in error message formatting when missing label is a string
+        # https://github.com/scikit-learn/scikit-learn/issues/8312
+>       with pytest.raises(ValueError, match="Class label label_not_present not present"):
+[1m[31mE       AssertionError: Regex pattern 'Class label label_not_present not present' does not match 'Class label 0 not present.'.[0m
+
+[1m[31mtest_class_weight.py[0m:33: AssertionError
+[31m[1m________________________ test_compute_class_weight_dict ________________________[0m
+
+    def test_compute_class_weight_dict():
+        classes = np.arange(3)
+        class_weights = {0: 1.0, 1: 2.0, 2: 3.0}
+        y = np.asarray([0, 0, 1, 2])
+        cw = compute_class_weight(class_weights, classes=classes, y=y)
+    
+        # When the user specifies class weights, compute_class_weights should just
+        # return them.
+        assert_array_almost_equal(np.asarray([1.0, 2.0, 3.0]), cw)
+    
+        # When a class weight is specified that isn't in classes, a ValueError
+        # should get raised
+        msg = "Class label 4 not present."
+        class_weights = {0: 1.0, 1: 2.0, 2: 3.0, 4: 1.5}
+>       with pytest.raises(ValueError, match=msg):
+[1m[31mE       Failed: DID NOT RAISE <class 'ValueError'>[0m
+
+[1m[31mtest_class_weight.py[0m:57: Failed
+[31m[1m______________________ test_compute_class_weight_default _______________________[0m
+
+    def test_compute_class_weight_default():
+        # Test for the case where no weight is given for a present class.
+        # Current behaviour is to assign the unweighted classes a weight of 1.
+        y = np.asarray([2, 2, 2, 3, 3, 4])
+        classes = np.unique(y)
+        classes_len = len(classes)
+    
+        # Test for non specified weights
+        cw = compute_class_weight(None, classes=classes, y=y)
+        assert len(cw) == classes_len
+        assert_array_almost_equal(cw, np.ones(3))
+    
+        # Tests for partly specified weights
+>       cw = compute_class_weight({2: 1.5}, classes=classes, y=y)
+
+[1m[31mtest_class_weight.py[0m:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+class_weight = {2: 1.5}
+
+    def compute_class_weight(class_weight, *, classes, y):
+        """Estimate class weights for unbalanced datasets.
+    
+        Parameters
+        ----------
+        class_weight : dict, 'balanced' or None
+            If 'balanced', class weights will be given by
+            ``n_samples / (n_classes * np.bincount(y))``.
+            If a dictionary is given, keys are classes and values
+            are corresponding class weights.
+            If None is given, the class weights will be uniform.
+    
+        classes : ndarray
+            Array of the classes occurring in the data, as given by
+            ``np.unique(y_org)`` with ``y_org`` the original class labels.
+    
+        y : array-like of shape (n_samples,)
+            Array of original class labels per sample.
+    
+        Returns
+        -------
+        class_weight_vect : ndarray of shape (n_classes,)
+            Array with class_weight_vect[i] the weight for i-th class.
+    
+        References
+        ----------
+        The "balanced" heuristic is inspired by
+        Logistic Regression in Rare Events Data, King, Zen, 2001.
+        """
+        # Import error caused by circular imports.
+        from ..preprocessing import LabelEncoder
+    
+        if set(y) - set(classes):
+            raise ValueError("classes should include all valid labels that can be in y")
+        if class_weight is None or len(class_weight) == 0:
+            # uniform class weights
+            weight = np.ones(classes.shape[0], dtype=np.float64, order="C")
+        elif class_weight == "balanced":
+            # Find the weight of each class as present in y.
+            le = LabelEncoder()
+            y_ind = le.fit_transform(y)
+            if not all(np.in1d(classes, le.classes_)):
+                raise ValueError("classes should have valid labels that are in y")
+    
+            recip_freq = len(y) / (len(le.classes_) * np.bincount(y_ind).astype(np.float64))
+            weight = recip_freq[le.transform(classes)]
+        else:
+            # user-defined dictionary
+            weight = np.ones(classes.shape[0], dtype=np.float64, order="C")
+            if not isinstance(class_weight, dict):
+                raise ValueError(
+                    "class_weight must be dict, 'balanced', or None, got: %r" % class_weight
+                )
+    
+            # Ignore class weights that are not in y
+            for c in y:
+                i = np.searchsorted(classes, c)
+                if i >= len(classes) or classes[i] != c or c not in class_weight:
+>                   raise ValueError("Class label {} not present.".format(c))
+[1m[31mE                   ValueError: Class label 3 not present.[0m
+
+[1m[31m../class_weight.py[0m:66: ValueError
+[31m========================= [31m[1m3 failed[0m, [32m8 passed[0m[31m in 0.37s[0m[31m ==========================[0m
