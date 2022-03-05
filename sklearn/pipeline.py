@@ -221,7 +221,6 @@ class Pipeline(_BaseComposition):
             and estimator != "passthrough"
             and not hasattr(estimator, "fit")
         ):
-            print(estimator)
             raise TypeError(
                 "Last step of Pipeline should implement fit, "
                 "fit_transform, or be the string 'passthrough'. "
