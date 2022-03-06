@@ -172,14 +172,16 @@ def test_pipeline_invalid_parameters():
     with pytest.raises(TypeError):
         pipeline.fit([[1]], [1])
 
+    nofit = NoFit()
     # Check that we can't fit pipelines with objects without fit
     # method
-    msg = (
-        "Last step of Pipeline should implement fit "
-        "or be the string 'passthrough'"
-        ".*NoFit.*"
+    msg = re.escape(
+        "Last step of Pipeline should implement fit, "
+        "fit_transform, or be the string 'passthrough'. "
+        "'%s' (type %s) doesn't" % (nofit, type(nofit))
     )
-    pipeline = Pipeline([("clf", NoFit())])
+
+    pipeline = Pipeline([("clf", nofit)])
     with pytest.raises(TypeError, match=msg):
         pipeline.fit([[1]], [1])
 
@@ -654,9 +656,8 @@ def test_set_pipeline_steps():
 
     # With invalid data
     pipeline.set_params(steps=[("junk", ())])
-    msg = re.escape(
-        "Last step of Pipeline should implement fit or be the string 'passthrough'."
-    )
+    msg = re.escape("Last step of Pipeline should implement fit, fit_transform, or be the string 'passthrough'. '()' (type <class 'tuple'>) doesn't")
+
     with pytest.raises(TypeError, match=msg):
         pipeline.fit([[1]], [1])
 
