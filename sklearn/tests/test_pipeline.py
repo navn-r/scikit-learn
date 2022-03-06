@@ -38,6 +38,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.impute import SimpleImputer
+from sklearn.manifold import TSNE
 
 iris = load_iris()
 
@@ -171,14 +172,16 @@ def test_pipeline_invalid_parameters():
     with pytest.raises(TypeError):
         pipeline.fit([[1]], [1])
 
+    nofit = NoFit()
     # Check that we can't fit pipelines with objects without fit
     # method
-    msg = (
-        "Last step of Pipeline should implement fit "
-        "or be the string 'passthrough'"
-        ".*NoFit.*"
+    msg = re.escape(
+        "Last step of Pipeline should implement fit, "
+        "fit_transform, or be the string 'passthrough'. "
+        "'%s' (type %s) doesn't" % (nofit, type(nofit))
     )
-    pipeline = Pipeline([("clf", NoFit())])
+
+    pipeline = Pipeline([("clf", nofit)])
     with pytest.raises(TypeError, match=msg):
         pipeline.fit([[1]], [1])
 
@@ -653,9 +656,8 @@ def test_set_pipeline_steps():
 
     # With invalid data
     pipeline.set_params(steps=[("junk", ())])
-    msg = re.escape(
-        "Last step of Pipeline should implement fit or be the string 'passthrough'."
-    )
+    msg = re.escape("Last step of Pipeline should implement fit, fit_transform, or be the string 'passthrough'. '()' (type <class 'tuple'>) doesn't")
+
     with pytest.raises(TypeError, match=msg):
         pipeline.fit([[1]], [1])
 
@@ -1545,3 +1547,27 @@ def test_pipeline_get_feature_names_out_passes_names_through():
     feature_names_out = pipe.get_feature_names_out(input_names)
 
     assert_array_equal(feature_names_out, [f"my_prefix_{name}" for name in input_names])
+
+def test_pipeline_tscne():
+    """Check that TSNE can be added to pipelines with warnings
+
+    Test for #16710
+    """
+
+    pca = PCA(n_components=2, random_state=0)
+    tsne = TSNE(random_state=0)
+    iris = load_iris()
+    res = tsne.fit_transform(pca.fit_transform(iris.data))
+
+    pca_for_pipeline = PCA(n_components=2, random_state=0)
+    tsne_for_pipeline = TSNE(random_state=0)
+    msg = ("Intermediate step '%s' (type %s) does not have "
+        "transform, pipeline is not reusable on test data."
+        % (tsne_for_pipeline, type(tsne_for_pipeline)))
+
+    pipe = make_pipeline(pca_for_pipeline, tsne_for_pipeline, 'passthrough')
+
+    with pytest.warns(UserWarning, match=re.escape(msg)):
+        pipeline_emb = pipe.fit_transform(iris.data)
+
+    assert_array_almost_equal(pipeline_emb, res)
