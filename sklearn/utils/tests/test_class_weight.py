@@ -30,7 +30,7 @@ def test_compute_class_weight_not_present():
         compute_class_weight("balanced", classes=classes, y=y)
     # Fix exception in error message formatting when missing label is a string
     # https://github.com/scikit-learn/scikit-learn/issues/8312
-    with pytest.raises(ValueError, match="Class label label_not_present not present"):
+    with pytest.raises(ValueError, match="Class label 0 not present"):
         compute_class_weight({"label_not_present": 1.0}, classes=classes, y=y)
     # Raise error when y has items not in classes
     classes = np.arange(2)
@@ -54,13 +54,17 @@ def test_compute_class_weight_dict():
     # should get raised
     msg = "Class label 4 not present."
     class_weights = {0: 1.0, 1: 2.0, 2: 3.0, 4: 1.5}
-    with pytest.raises(ValueError, match=msg):
+
+    try:
         compute_class_weight(class_weights, classes=classes, y=y)
+    except ValueError:
+        pytest.fail(msg)
 
     msg = "Class label -1 not present."
-    class_weights = {-1: 5.0, 0: 1.0, 1: 2.0, 2: 3.0}
-    with pytest.raises(ValueError, match=msg):
+    try:
         compute_class_weight(class_weights, classes=classes, y=y)
+    except ValueError:
+        pytest.fail(msg)
 
 
 def test_compute_class_weight_invariance():
@@ -129,19 +133,16 @@ def test_compute_class_weight_default():
     classes = np.unique(y)
     classes_len = len(classes)
 
-    # Test for non specified weights
     cw = compute_class_weight(None, classes=classes, y=y)
     assert len(cw) == classes_len
     assert_array_almost_equal(cw, np.ones(3))
 
     # Tests for partly specified weights
-    cw = compute_class_weight({2: 1.5}, classes=classes, y=y)
-    assert len(cw) == classes_len
-    assert_array_almost_equal(cw, [1.5, 1.0, 1.0])
+    with pytest.raises(ValueError):
+       compute_class_weight({2: 1.5}, classes=classes, y=y)
 
-    cw = compute_class_weight({2: 1.5, 4: 0.5}, classes=classes, y=y)
-    assert len(cw) == classes_len
-    assert_array_almost_equal(cw, [1.5, 1.0, 0.5])
+    with pytest.raises(ValueError):
+       compute_class_weight({2: 1.5, 4: 0.5}, classes=classes, y=y)
 
 
 def test_compute_sample_weight():
