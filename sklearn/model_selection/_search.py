@@ -24,7 +24,7 @@ import numpy as np
 from numpy.ma import MaskedArray
 from scipy.stats import rankdata
 
-from ..base import BaseEstimator, is_classifier, clone
+from ..base import BaseEstimator, is_regressor, is_classifier, clone
 from ..base import MetaEstimatorMixin
 from ._split import check_cv
 from ._validation import _fit_and_score
@@ -745,6 +745,7 @@ class BaseSearchCV(MetaEstimatorMixin, BaseEstimator, metaclass=ABCMeta):
             if len(min_rank_indices) == 1:
                 # Store the only best index, further computation need not be necessary
                 best_index = min_rank_indices[0]
+                return best_index
             else:
                 """
                 Get the parameter values. Note keys are prefixed with 'param_'
@@ -762,20 +763,21 @@ class BaseSearchCV(MetaEstimatorMixin, BaseEstimator, metaclass=ABCMeta):
 
                         @see numpy.ma.filled()
                         """
-                        fill_value = float("inf")
+                        values, fill_value = results.get(key), float("inf")
 
-                        value = np.asarray(
-                            [
+                        # Edge case where Regressors are passed as values
+                        # eg. values = [LinearRegressor(), Ridge()]
+                        if any(is_regressor(element) for element in values):
+                            value = [str(item) for item in values.data]
+                        else:
+                            value = [
                                 # Extra None check required,
                                 # .filled only fills masked (not None) data
                                 val if val is not None else fill_value
-                                for val in results.get(key).filled(
-                                    fill_value=fill_value
-                                )
+                                for val in values.filled(fill_value=fill_value)
                             ]
-                        )
 
-                        param_values.append(value)
+                        param_values.append(np.asarray(value))
 
             """
             Computes all combinations of values,
