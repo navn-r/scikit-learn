@@ -732,7 +732,79 @@ class BaseSearchCV(MetaEstimatorMixin, BaseEstimator, metaclass=ABCMeta):
             if best_index < 0 or best_index >= len(results["params"]):
                 raise IndexError("best_index_ index out of range")
         else:
-            best_index = results[f"rank_test_{refit_metric}"].argmin()
+            # Compute Rank Score
+            rank_test_score = results[f"rank_test_{refit_metric}"]
+
+            # Extract indices with minimum rank
+            min_rank = min(rank_test_score)
+            min_rank_indices = [
+                i for i, rank in enumerate(rank_test_score) if rank == min_rank
+            ]
+
+            # Check if there is only one minimum rank, and not multiple min ranks
+            if len(min_rank_indices) == 1:
+                # Store the only best index, further computation need not be necessary
+                best_index = min_rank_indices[0]
+            else:
+                """
+                Get the parameter values. Note keys are prefixed with 'param_'
+
+                precondition eg.:   result = { 'foo': 1, 'bar': 'baz' }
+                postcondition eg.:  result.keys() = [ 'param_foo', 'param_bar' ]
+                """
+                param_values = []
+
+                for key in results.keys():
+                    if key.startswith("param_"):
+                        """
+                        Replace any masked / invalid data,
+                        with a filled value (max'm float value)
+
+                        @see numpy.ma.filled()
+                        """
+                        fill_value = float("inf")
+
+                        value = np.asarray(
+                            [
+                                # Extra None check required,
+                                # .filled only fills masked (not None) data
+                                val if val is not None else fill_value
+                                for val in results.get(key).filled(
+                                    fill_value=fill_value
+                                )
+                            ]
+                        )
+
+                        param_values.append(value)
+
+            """
+            Computes all combinations of values,
+            then takes only the values from the min'm rank indices
+
+            Requires first converting to np.ndarray, then back to list
+            """
+            min_rank_values = (
+                np.asarray(param_values).transpose()[min_rank_indices].tolist()
+            )
+
+            """
+            Zips the min rank indices with their corresponding rank values,
+            then sort using said rank values
+
+            precondition eg.:
+                min_rank_indices =  [0, 3]
+                min_rank_values =   [['1', 'linear'], ['10', 'rbf']]
+
+            postcondition eg.:
+                best_params = [(3, ['1', 'linear']), (0, ['10', 'rbf'])]
+            """
+            best_params = sorted(
+                list(zip(min_rank_indices, min_rank_values)),
+                key=lambda x: x[1],
+            )
+
+            # Extract the first best param index, guaranteed to be consistent
+            best_index = best_params[0][0]
         return best_index
 
     def fit(self, X, y=None, *, groups=None, **fit_params):
