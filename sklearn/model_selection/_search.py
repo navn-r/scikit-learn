@@ -745,6 +745,7 @@ class BaseSearchCV(MetaEstimatorMixin, BaseEstimator, metaclass=ABCMeta):
             if len(min_rank_indices) == 1:
                 # Store the only best index, further computation need not be necessary
                 best_index = min_rank_indices[0]
+                return best_index
             else:
                 """
                 Get the parameter values. Note keys are prefixed with 'param_'
