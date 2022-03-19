@@ -2450,3 +2450,23 @@ def test_grid_search_various_combinations_same_rank():
 
     pairs = zip(to_compare, to_compare)
     assert all(True if x==y else False for x,y in pairs)
+
+def test_grid_search_various_combinations_same_rank_randomized_search_cv():
+    """
+    Test grid with parameters passed in different orders. Verify result is returned based on lexicographical precedence.
+    """
+    iris = load_iris()
+    list_of_params = [
+        {'kernel': ('linear', 'rbf'),'C': [7, 1]}, 
+        {'kernel': ('linear', 'rbf'), 'C':[1, 7]},
+        {'kernel': ('rbf', 'linear'), 'C': [7, 1]}, 
+        {'kernel': ('rbf', 'linear'), 'C':[1, 7]}
+    ] 
+    to_compare = []
+    for element in list_of_params:
+        clf = RandomizedSearchCV( estimator=SVC(), n_iter=3, param_distributions=element, return_train_score=True )
+        clf.fit(X=iris.data, y=iris.target)
+        to_compare.append(clf.best_params_)
+
+    pairs = zip(to_compare, to_compare)
+    assert all(True if x==y else False for x,y in pairs)
