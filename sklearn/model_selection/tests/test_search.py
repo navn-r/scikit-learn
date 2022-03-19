@@ -8,6 +8,7 @@ import pickle
 import sys
 from types import GeneratorType
 import re
+from sklearn.datasets import load_iris
 
 import numpy as np
 import scipy.sparse as sp
@@ -2409,3 +2410,43 @@ def test_search_cv_verbose_3(capsys, return_train_score):
     else:
         match = re.findall(r"score=[\d\.]+", captured)
     assert len(match) == 3
+
+@pytest.mark.parametrize(
+    "expected",
+    [
+        ({'regressor': LinearRegression()})
+    ],
+)
+def test_grid_search_combinations_with_regressors(expected):
+    """
+    Test grid search with regressors passed in as parameters in various orders. Return should be based on lexicographical precedence.
+    """
+
+    pipe = Pipeline([("regressor", LinearRegression())])
+    param_grid = {"regressor": [LinearRegression(), Ridge()]}
+    grid_search = GridSearchCV(pipe, param_grid, cv=2)
+    grid_search.fit(X, y)
+    # Unable to check for equality of two objects as python checks for same address as well
+    # So checking string representative lets us know if the correct one was returned back
+    assert str(grid_search.best_params_) == str(expected)
+
+
+def test_grid_search_various_combinations_same_rank():
+    """
+    Test grid with parameters passed in different orders. Verify result is returned based on lexicographical precedence.
+    """
+    iris = load_iris()
+    list_of_params = [
+        {'kernel': ('linear', 'rbf'),'C': [7, 1]}, 
+        {'kernel': ('linear', 'rbf'), 'C':[1, 7]},
+        {'kernel': ('rbf', 'linear'), 'C': [7, 1]}, 
+        {'kernel': ('rbf', 'linear'), 'C':[1, 7]}
+    ] 
+    to_compare = []
+    for element in list_of_params:
+        clf = GridSearchCV(estimator=SVC(), param_grid=element, return_train_score=True)
+        clf.fit(X=iris.data, y=iris.target)
+        to_compare.append(clf.best_params_)
+
+    pairs = zip(to_compare, to_compare)
+    assert all(True if x==y else False for x,y in pairs)
