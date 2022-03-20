@@ -8,6 +8,7 @@ import pickle
 import sys
 from types import GeneratorType
 import re
+from sklearn.datasets import load_iris
 
 import numpy as np
 import scipy.sparse as sp
@@ -2409,3 +2410,49 @@ def test_search_cv_verbose_3(capsys, return_train_score):
     else:
         match = re.findall(r"score=[\d\.]+", captured)
     assert len(match) == 3
+
+
+@pytest.mark.parametrize("SearchCV", [GridSearchCV, RandomizedSearchCV])
+def test_search_cv_combinations_with_regressors(SearchCV):
+    """
+    Test search cv with regressors passed in as parameters in various orders.
+    Verify result is returned based on lexicographical precedence.
+    """
+
+    model = Pipeline([("regressor", LinearRegression())])
+    params = {"regressor": [LinearRegression(), Ridge()]}
+    expected = {"regressor": LinearRegression()}
+
+    search = SearchCV(model, params, cv=2)
+    search.fit(X, y)
+
+    # Deep equality not feasible, suffices to compare string representation
+    assert str(search.best_params_) == str(expected)
+
+
+@pytest.mark.parametrize("SearchCV", [GridSearchCV, RandomizedSearchCV])
+def test_search_cv_various_combinations_same_rank(SearchCV):
+    """
+    Test search cv with parameters passed in different orders.
+    Verify result is returned based on lexicographical precedence.
+    """
+
+    def fit_best_params(param):
+        clf = SearchCV(SVC(), param, return_train_score=True)
+        clf.fit(X=iris.data, y=iris.target)
+
+        return clf.best_params_
+
+    iris = load_iris()
+
+    params = [
+        {"kernel": ("linear", "rbf"), "C": [7, 1]},
+        {"kernel": ("linear", "rbf"), "C": [1, 7]},
+        {"kernel": ("rbf", "linear"), "C": [7, 1]},
+        {"kernel": ("rbf", "linear"), "C": [1, 7]},
+    ]
+
+    best_params = [fit_best_params(param) for param in params]
+
+    pairs = zip(best_params, best_params)
+    assert all(x == y for x, y in pairs)
