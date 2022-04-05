@@ -464,11 +464,11 @@ def test_categorical_parameters(is_categorical, known_categories, match):
 
 def test_sparse_matrix_find_binning():
     # creates an evenly spaced array with 5 values ranging from 0 to 15 
-    data = np.linspace(0, 15, 7)
-    row = [x for x in range(7)]
-    col = [0 for _ in range(7)]
+    linspace_array = np.linspace(0, 15, 7)
+    y_axis = [x for x in range(7)]
+    x_axis = [0 for _ in range(7)]
     # pairs each corresponding row and column with each of the values in data
-    data = sp.csr_matrix((data, (row, col)), (10, 1))
+    linspace_array = sp.csr_matrix((linspace_array, (y_axis, x_axis)), (10, 1))
     # map the data into bins
-    bin_thresholds = _find_binning_thresholds(data, max_bins=5)
-    assert(bin_thresholds, [0,1.25,6.25,11.25])
+    get_bin = _find_binning_thresholds(linspace_array, max_bins=5)
+    assert(get_bin, [0,1.25,6.25,11.25])
