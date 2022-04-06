@@ -8,7 +8,7 @@ approximately the same number of samples.
 # Author: Nicolas Hug
 
 import numpy as np
-
+import scipy.sparse as sp
 from ...utils import check_random_state, check_array
 from ...base import BaseEstimator, TransformerMixin
 from ...utils.validation import check_is_fitted
@@ -17,6 +17,77 @@ from ...utils._openmp_helpers import _openmp_effective_n_threads
 from ._binning import _map_to_bins
 from .common import X_DTYPE, X_BINNED_DTYPE, ALMOST_INF, X_BITSET_INNER_DTYPE
 from ._bitset import set_bitset_memoryview
+
+
+def _pack_matrix(sparse_matrix):
+    """
+    Turns a sparse matrix into a dense one by packing;
+    Pushes all 0-valued indices to the bottom of the column.
+
+    Returns dense matrix, and array containing the original row indices,
+    used for unpacking
+    """
+    columns = indices = [[] for _ in range(sparse_matrix.shape[1])]
+
+    """
+    Returns the indices (row & column) and values of the nonzero elements of a matrix
+    @see scipy.sparse.find
+    """
+    row_indices, column_indices, values = sp.find(sparse_matrix)
+
+    for i, value in enumerate(values):
+        row_index = row_indices[i]
+        column_index = column_indices[i]
+
+        columns[column_index].append(value)
+        indices[column_index].append(row_index)
+
+    col_lengths = [len(x) for x in columns]
+    max_length_col = max(col_lengths)
+
+    for i, col_length in enumerate(col_lengths):
+        column, index = columns[i], indices[i]
+
+        column_dist = max_length_col - col_length
+        index_dist = max_length_col - len(index)
+
+        # Make it a square matrix (i.e. make the column and index arrays the same length as the other elements in col_lengths) with blank values
+        # I.e. just to ensure the 2D array of values and indexes we have are of equal length 
+        column.extend([0 for _ in range(column_dist)])
+        index.extend([np.nan for _ in range(index_dist)])
+
+    # Transposed numpy array required
+    dense_matrix = np.array(columns, dtype=sparse_matrix.dtype).T
+    row_indices = np.array(indices).T
+
+    return dense_matrix, row_indices
+
+
+def _unpack_matrix(dense_matrix, row_indices, shape):
+    """
+    Constructs an empty sparse matrix with given shape.
+
+    Row-based list of lists sparse matrix.
+    @see scipy.sparse.lil_matrix
+    """
+    sparse_matrix = sp.lil_matrix(shape, dtype=dense_matrix.dtype)
+
+    num_rows, num_columns = dense_matrix.shape
+
+    for i in range(num_rows):
+        for j in range(num_columns):
+            row = row_indices[i, j]
+
+            if np.isnan(row):
+                pass
+
+            sparse_matrix[row, j] = dense_matrix[i, j]
+
+    """
+    Converts matrix from list of lists (LIL) to Compressed Sparse Row (CSR) format.
+    @see scipy.sparse.lil_matrix.tocsr
+    """
+    return sparse_matrix.tocsr()
 
 
 def _find_binning_thresholds(col_data, max_bins):
@@ -41,12 +112,26 @@ def _find_binning_thresholds(col_data, max_bins):
         A given value x will be mapped into bin value i iff
         bining_thresholds[i - 1] < x <= binning_thresholds[i]
     """
-    # ignore missing values when computing bin thresholds
-    missing_mask = np.isnan(col_data)
-    if missing_mask.any():
-        col_data = col_data[~missing_mask]
-    col_data = np.ascontiguousarray(col_data, dtype=X_DTYPE)
-    distinct_values = np.unique(col_data)
+    if not sp.issparse(col_data):
+        # ignore missing values when computing bin thresholds
+        missing_mask = np.isnan(col_data)
+        if missing_mask.any():
+            col_data = col_data[~missing_mask]
+        col_data = np.ascontiguousarray(col_data, dtype=X_DTYPE)
+        distinct_values = np.unique(col_data)
+    else:
+        # ignore zeros when computing distinct values
+        # col_data.nonzero() is used to get the indexes of the non-zero entries
+        # Then we take the first of these values, get it, and get a dense ndarray representation
+        non_zero_values = col_data[col_data.nonzero()[0]].toarray()
+
+        if 0 in col_data:
+            non_zero_values = np.append(non_zero_values, 0)
+
+        distinct_values = np.unique(non_zero_values)
+
+        col_data = col_data.toarray()
+
     if len(distinct_values) <= max_bins:
         midpoints = distinct_values[:-1] + distinct_values[1:]
         midpoints *= 0.5
@@ -190,13 +275,13 @@ class _BinMapper(TransformerMixin, BaseEstimator):
                 )
             )
 
-        X = check_array(X, dtype=[X_DTYPE], force_all_finite=False)
+        X = check_array(X, dtype=[X_DTYPE], force_all_finite=False, accept_sparse=True)
         max_bins = self.n_bins - 1
 
         rng = check_random_state(self.random_state)
         if self.subsample is not None and X.shape[0] > self.subsample:
             subset = rng.choice(X.shape[0], self.subsample, replace=False)
-            X = X.take(subset, axis=0)
+            X = X[subset, :] if sp.issparse(X) else X.take(subset, axis=0)
 
         if self.is_categorical is None:
             self.is_categorical_ = np.zeros(X.shape[1], dtype=np.uint8)
@@ -264,7 +349,7 @@ class _BinMapper(TransformerMixin, BaseEstimator):
         X_binned : array-like of shape (n_samples, n_features)
             The binned data (fortran-aligned).
         """
-        X = check_array(X, dtype=[X_DTYPE], force_all_finite=False)
+        X = check_array(X, dtype=[X_DTYPE], force_all_finite=False, accept_sparse=True)
         check_is_fitted(self)
         if X.shape[1] != self.n_bins_non_missing_.shape[0]:
             raise ValueError(
@@ -273,11 +358,58 @@ class _BinMapper(TransformerMixin, BaseEstimator):
             )
 
         n_threads = _openmp_effective_n_threads(self.n_threads)
-        binned = np.zeros_like(X, dtype=X_BINNED_DTYPE, order="F")
+
+        # Early return for dense matrix
+        if not sp.issparse(X):
+            binned = np.zeros_like(X, dtype=X_BINNED_DTYPE, order="F")
+            _map_to_bins(
+                X, self.bin_thresholds_, self.missing_values_bin_idx_, n_threads, binned
+            )
+
+            return binned
+
+        zero = np.zeros((1, X.shape[1]), dtype=X_DTYPE)
+        binned = np.zeros_like(zero, dtype=X_BINNED_DTYPE, order="F").reshape(-1, 1)
+
         _map_to_bins(
-            X, self.bin_thresholds_, self.missing_values_bin_idx_, n_threads, binned
+            zero,
+            self.bin_thresholds_,
+            self.missing_values_bin_idx_,
+            n_threads,
+            binned,
         )
-        return binned
+
+        zero_bins = binned.copy()
+
+        # Pack the matrix from sparse matrix to dense
+        dense_matrix, indices = _pack_matrix(X)
+        bins = np.zeros_like(dense_matrix, dtype=X_BINNED_DTYPE).reshape(-1, 1)
+
+        _map_to_bins(
+            dense_matrix,
+            self.bin_thresholds_,
+            self.missing_values_bin_idx_,
+            n_threads,
+            bins,
+        )
+
+        # Shift bins to the right
+        bins = np.array(
+            [
+                0
+                if bin_index == zero_bins
+                else bin_index + 1
+                if bin_index < zero_bins
+                else bin_index
+                for bin_index in bins
+            ],
+            dtype=X_BINNED_DTYPE,
+        ).reshape(-1, 1)
+
+        # Unpack from dense matrix to sparse
+        binned = _unpack_matrix(bins, indices, X.shape)
+
+        return binned, zero_bins
 
     def make_known_categories_bitsets(self):
         """Create bitsets of known categories.

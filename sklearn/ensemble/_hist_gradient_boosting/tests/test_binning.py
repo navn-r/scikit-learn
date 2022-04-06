@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.sparse as sp
 from numpy.testing import assert_array_equal, assert_allclose
 import pytest
 
@@ -459,3 +460,15 @@ def test_categorical_parameters(is_categorical, known_categories, match):
     )
     with pytest.raises(ValueError, match=match):
         bin_mapper.fit(X)
+
+
+def test_sparse_matrix_find_binning():
+    # creates an evenly spaced array with 5 values ranging from 0 to 15 
+    linspace_array = np.linspace(0, 15, 7)
+    y_axis = [x for x in range(7)]
+    x_axis = [0 for _ in range(7)]
+    # pairs each corresponding row and column with each of the values in data
+    linspace_array = sp.csr_matrix((linspace_array, (y_axis, x_axis)), (10, 1))
+    # map the data into bins
+    get_bin = _find_binning_thresholds(linspace_array, max_bins=5)
+    assert(get_bin, [0,1.25,6.25,11.25])

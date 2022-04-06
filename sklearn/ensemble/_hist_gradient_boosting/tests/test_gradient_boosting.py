@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.sparse as sp
 import pytest
 from numpy.testing import assert_allclose, assert_array_equal
 from sklearn._loss.loss import (
@@ -1101,3 +1102,16 @@ def test_loss_deprecated(old_loss, new_loss):
     est2 = HistGradientBoostingRegressor(loss=new_loss, random_state=0)
     est2.fit(X, y)
     assert_allclose(est1.predict(X), est2.predict(X))
+
+
+def test_gradient_boosting_with_sparse_matrix():
+
+    # Create a csr matrix given a numpy array, then reshape it to have any number of rows with 1 column 
+    # -1 indicates any number of rows    
+    sample = sp.csr_matrix(np.array([3,1,0, np.nan]).reshape(-1, 1))
+    y = [1,2,3,4]
+    temp = HistGradientBoostingClassifier(min_samples_leaf=1)
+    # Train the data
+    temp.fit(sample, y)
+    # Verify the perdiction returns back correct result based on training
+    assert(temp.predict(sample), y)
