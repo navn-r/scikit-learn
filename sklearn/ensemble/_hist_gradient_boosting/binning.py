@@ -51,7 +51,8 @@ def _pack_matrix(sparse_matrix):
         column_dist = max_length_col - col_length
         index_dist = max_length_col - len(index)
 
-        # TODO @D01 ADD Explanation why here
+        # Make it a square matrix (i.e. make the column and index arrays the same length as the other elements in col_lengths) with blank values
+        # I.e. just to ensure the 2D array of values and indexes we have are of equal length 
         column.extend([0 for _ in range(column_dist)])
         index.extend([np.nan for _ in range(index_dist)])
 
@@ -120,7 +121,8 @@ def _find_binning_thresholds(col_data, max_bins):
         distinct_values = np.unique(col_data)
     else:
         # ignore zeros when computing distinct values
-        # TODO @D01 Explain how `col_data[col_data.nonzero()[0]]` works
+        # col_data.nonzero() is used to get the indexes of the non-zero entries
+        # Then we take the first of these values, get it, and get a dense ndarray representation
         non_zero_values = col_data[col_data.nonzero()[0]].toarray()
 
         if 0 in col_data:
